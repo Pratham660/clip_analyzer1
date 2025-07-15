@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
 # ---- CONFIG ----
-DB_URI = st.secrects["DB_URI"]
+DB_URI = st.secrets["DB_URI"]
 engine = create_engine(DB_URI)
 
 # ---- PAGE SETUP ----
