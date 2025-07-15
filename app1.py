@@ -12,13 +12,17 @@ engine = create_engine(DB_URI)
 # st.title("🧠 Trade Log Dashboard - Dynamic Query Builder")
 
 # ---- WIDGETS ----
-st.sidebar.header("Controls -%")
+st.sidebar.header("- Controls --")
 
-query_type = st.sidebar.selectbox("Query Mode", ["Simple Aggregation", "VWAP by Side", "VWAP Buy-Sell Delta"])
+query_type = st.sidebar.selectbox("Query Mode", ["Simple Aggregate", "VWAP by Side", "VWAP Buy-Sell Delta"])
 
 # 1. Date range picker
 start_date = st.sidebar.date_input("Start Date", datetime.today() - timedelta(days=7))
 end_date = st.sidebar.date_input("End Date", datetime.today())
+
+## showsql or not
+show_sql = st.sidebar.checkbox("Show SQL Query", value=True)
+
 
 # 2. Instrument filter (optional multi-select) ###
 with engine.connect() as conn:  ###
@@ -74,7 +78,7 @@ if query_type == "Simple Aggregate":
     query, query_params = build_query()
 
 elif query_type == "VWAP by Side":
-    show_sql = True  # Always show SQL for advanced queries
+    # show_sql = True  # Always show SQL for advanced queries
 
     query = f"""
     WITH vwap_by_side AS (
@@ -116,7 +120,7 @@ elif query_type == "VWAP by Side":
         query_params["instruments"] = selected_instruments
 
 elif query_type == "VWAP Buy-Sell Delta":
-    show_sql = True
+    # show_sql = True
     query = f"""
     WITH vwap_calc AS (
         SELECT 
@@ -168,7 +172,7 @@ try:
 
     st.dataframe(df, use_container_width=True)
 
-    if query_type == "Simple Aggregation":
+    if query_type == "Simple Aggregate":
         if chart_type == "Bar Chart":
             st.bar_chart(df.set_index("group_field"))
         elif chart_type == "Line Chart":
