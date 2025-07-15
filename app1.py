@@ -6,15 +6,16 @@ from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
 # ---- CONFIG ----
-DB_URI = "postgresql+psycopg2://postgres:peripostgres@localhost:5432/postgres"
-engine = create_engine(DB_URI)
+# DB_URI = "postgresql+psycopg2://postgres:peripostgres@localhost:5432/postgres"
+# engine = create_engine(DB_URI)
+conn =st.connection("postgresql", type="sql")
 
 # ---- PAGE SETUP ----
-# st.set_page_config(page_title="📊 Trade Log Explorer", layout="wide")
+# st.set_page_config(page_title="Clip Analsis", layout="wide")
 # st.title("🧠 Trade Log Dashboard - Dynamic Query Builder")
 
 # ---- WIDGETS ----
-st.sidebar.header("--Controls")
+st.sidebar.header("Controls -%")
 
 query_type = st.sidebar.selectbox("Query Mode", ["Simple Aggregation", "VWAP by Side", "VWAP Buy-Sell Delta"])
 
@@ -22,15 +23,15 @@ query_type = st.sidebar.selectbox("Query Mode", ["Simple Aggregation", "VWAP by 
 start_date = st.sidebar.date_input("Start Date", datetime.today() - timedelta(days=7))
 end_date = st.sidebar.date_input("End Date", datetime.today())
 
-# 2. Instrument filter (optional multi-select)
-with engine.connect() as conn:
-    instruments = pd.read_sql("SELECT DISTINCT instrumentname FROM public.log_big_clips ORDER BY instrumentname", conn)
+# 2. Instrument filter (optional multi-select) ###
+# with engine.connect() as conn:  ###
+instruments = pd.read_sql("SELECT DISTINCT instrumentname FROM public.log_big_clips ORDER BY instrumentname", conn)
 selected_instruments = st.sidebar.multiselect("Instruments", instruments['instrumentname'].tolist())
 
 # ---- SIMPLE QUERY WIDGETS ----
-if query_type == "Simple Aggregation":
+if query_type == "Simple Aggregate":
     side = st.sidebar.radio("Direction", options=["All", "Buy (B)", "Sell (S)"])
-    agg_type = st.sidebar.selectbox("Aggregation Type", ["SUM", "AVG", "COUNT", "VWAP"])
+    agg_type = st.sidebar.selectbox("Aggregate Type", ["SUM", "AVG", "COUNT", "VWAP"])
     group_by = st.sidebar.selectbox("Group By", [
         "DATE(local_datetime)",
         "instrumentname",
@@ -159,8 +160,8 @@ elif query_type == "VWAP Buy-Sell Delta":
 
 # ---- RUN QUERY ----
 try:
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params=query_params)
+    # with engine.connect() as conn: ##############
+    df = pd.read_sql(text(query), conn, params=query_params)
 
     st.subheader(f"Results")
     # st.subheader(f"Results for '{query_type}'")
