@@ -1,14 +1,11 @@
-# streamlit_query_builder.py
-
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
 # ---- CONFIG ----
-# DB_URI = "postgresql+psycopg2://postgres:peripostgres@localhost:5432/postgres"
-# engine = create_engine(DB_URI)
-conn =st.connection("postgresql", type="sql")
+DB_URI = st.secrects["DB_URI"]
+engine = create_engine(DB_URI)
 
 # ---- PAGE SETUP ----
 # st.set_page_config(page_title="Clip Analsis", layout="wide")
@@ -24,8 +21,8 @@ start_date = st.sidebar.date_input("Start Date", datetime.today() - timedelta(da
 end_date = st.sidebar.date_input("End Date", datetime.today())
 
 # 2. Instrument filter (optional multi-select) ###
-# with engine.connect() as conn:  ###
-instruments = pd.read_sql("SELECT DISTINCT instrumentname FROM public.log_big_clips ORDER BY instrumentname", conn)
+with engine.connect() as conn:  ###
+    instruments = pd.read_sql("SELECT DISTINCT instrumentname FROM public.log_big_clips ORDER BY instrumentname", conn)
 selected_instruments = st.sidebar.multiselect("Instruments", instruments['instrumentname'].tolist())
 
 # ---- SIMPLE QUERY WIDGETS ----
@@ -160,8 +157,8 @@ elif query_type == "VWAP Buy-Sell Delta":
 
 # ---- RUN QUERY ----
 try:
-    # with engine.connect() as conn: ##############
-    df = pd.read_sql(text(query), conn, params=query_params)
+    with engine.connect() as conn: ##############
+        df = pd.read_sql(text(query), conn, params=query_params)
 
     st.subheader(f"Results")
     # st.subheader(f"Results for '{query_type}'")
