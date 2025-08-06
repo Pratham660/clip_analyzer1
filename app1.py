@@ -2,46 +2,43 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
+import altair as alt
+from auth import login
+import plotly.graph_objects as go
+from datetime import date
 
 # ---- CONFIG ----
+login()
 DB_URI = st.secrets["DB_URI"]
 engine = create_engine(DB_URI)
 
-# ---- PAGE SETUP ----
-# st.set_page_config(page_title="Clip Analsis", layout="wide")
-# st.title("🧠 Trade Log Dashboard - Dynamic Query Builder")
-
 # ---- WIDGETS ----
-st.sidebar.header("- Controls --")
-
-query_type = st.sidebar.selectbox("Query Mode", ["Simple Aggregate", "VWAP by Side", "VWAP Buy-Sell Delta"])
-
-# 1. Date range picker
+st.sidebar.header("- Controls -")
+query_type = st.sidebar.selectbox("Query Mode", ["Aggregate Queries", "VWAP by Side", "VWAP Buy-Sell Delta", "temp1"])
 start_date = st.sidebar.date_input("Start Date", datetime.today() - timedelta(days=7))
 end_date = st.sidebar.date_input("End Date", datetime.today())
+show_sql = st.sidebar.checkbox("Show SQL Query?", value=False)
 
-## showsql or not
-show_sql = st.sidebar.checkbox("Show SQL Query", value=True)
+## FETCH ALL INSTRUMENTS THAT FALL WITHIN THIS RANGE
+with engine.connect() as conn:
+    query_text = "SELECT DISTINCT instrumentname FROM public.log_big_clips WHERE local_datetime BETWEEN %s AND %s ORDER BY instrumentname"
+    query_params = (str(start_date),str(end_date))
+    instruments = pd.read_sql(query_text, conn, params=query_params)
 
-
-# 2. Instrument filter (optional multi-select) ###
-with engine.connect() as conn:  ###
-    instruments = pd.read_sql("SELECT DISTINCT instrumentname FROM public.log_big_clips ORDER BY instrumentname", conn)
+## USER SELECTS SOME INSTRUMENTS (ALL SELECTED BY DEFAULT)
 selected_instruments = st.sidebar.multiselect("Instruments", instruments['instrumentname'].tolist())
 
-# ---- SIMPLE QUERY WIDGETS ----
-if query_type == "Simple Aggregate":
-    side = st.sidebar.radio("Direction", options=["All", "Buy (B)", "Sell (S)"])
+## DIFFERENT QUERIES
+if query_type == "Aggregate Queries":
+    side = st.sidebar.radio("Direction", options=["All", "Buy(B)", "Sell(S)"])
     agg_type = st.sidebar.selectbox("Aggregate Type", ["SUM", "AVG", "COUNT", "VWAP"])
     group_by = st.sidebar.selectbox("Group By", [
         "DATE(local_datetime)",
         "instrumentname",
         "direction",
-        "EXTRACT(HOUR FROM local_datetime)"
-    ])
+        "EXTRACT(HOUR FROM local_datetime)" ])
     top_n = st.sidebar.slider("Top N Results", 1, 100, 10)
     chart_type = st.sidebar.selectbox("Chart Type", ["Table", "Bar Chart", "Line Chart", "Histogram"])
-    show_sql = st.sidebar.checkbox("Show Generated SQL")
 
     def build_query():
         where_clauses = ["local_datetime BETWEEN :start_date AND :end_date"]
@@ -51,9 +48,9 @@ if query_type == "Simple Aggregate":
             where_clauses.append("instrumentname = ANY(:instruments)")
             params["instruments"] = selected_instruments
 
-        if side == "Buy (B)":
+        if side == "Buy(B)":
             where_clauses.append("direction = 'B'")
-        elif side == "Sell (S)":
+        elif side == "Sell(S)":
             where_clauses.append("direction = 'S'")
 
         if agg_type == "VWAP":
@@ -78,39 +75,38 @@ if query_type == "Simple Aggregate":
     query, query_params = build_query()
 
 elif query_type == "VWAP by Side":
-    # show_sql = True  # Always show SQL for advanced queries
 
     query = f"""
-    WITH vwap_by_side AS (
-        SELECT 
-            local_datetime,
-            DATE(local_datetime) AS onlydate,
-            instrument_id,
-            instrumentname,
-            direction,
-            quantity,
-            price,
-            SUM(quantity * price) OVER (
-                PARTITION BY DATE(local_datetime), instrument_id, instrumentname, direction
-            ) AS total_weighted_price,
-            SUM(quantity) OVER (
-                PARTITION BY DATE(local_datetime), instrument_id, instrumentname, direction
-            ) AS total_quantity,
-            SUM(quantity * price) OVER (
-                PARTITION BY DATE(local_datetime), instrument_id, instrumentname, direction
-            ) / NULLIF(SUM(quantity) OVER (
-                PARTITION BY DATE(local_datetime), instrument_id, instrumentname, direction
-            ), 0) AS vwap_side
-        FROM public.log_big_clips
-        WHERE local_datetime BETWEEN :start_date AND :end_date
-        {"AND instrumentname = ANY(:instruments)" if selected_instruments else ""}
+    WITH raw_data AS (
+    SELECT 
+        local_datetime,
+        DATE(local_datetime) AS Date,
+        instrument_id,
+        instrumentname,
+        direction,
+        quantity,
+        price,
+        SUM(quantity * price) OVER (
+            PARTITION BY DATE(local_datetime), instrument_id, instrumentname, direction
+        ) AS total_weighted_price,
+        SUM(quantity) OVER (
+            PARTITION BY DATE(local_datetime), instrument_id, instrumentname, direction
+        ) AS total_quantity
+    FROM public.log_big_clips
+    WHERE local_datetime BETWEEN :start_date AND :end_date
+    {"AND instrumentname = ANY(:instruments)" if selected_instruments else ""}
+    ),
+    vwap_by_side AS (
+        SELECT *,
+            total_weighted_price / NULLIF(total_quantity, 0) AS vwap_side
+        FROM raw_data
     )
 
-    SELECT DISTINCT onlydate, instrumentname, direction, total_quantity, 
-        ROUND(vwap_side::numeric, 2) AS vwap, MAX(local_datetime) AS latest_datetime
+    SELECT DISTINCT Date, instrumentname, direction, total_quantity, 
+        ROUND(vwap_side::numeric, 2) AS vwap, MAX(local_datetime) AS last_trade_time
     FROM vwap_by_side
-    GROUP BY onlydate, instrumentname, direction, total_quantity, vwap_side
-    ORDER BY instrumentname, latest_datetime DESC;
+    GROUP BY Date, instrumentname, direction, total_quantity, vwap_side
+    ORDER BY instrumentname, last_trade_time DESC;
     """
     query_params = {
         "start_date": str(start_date),
@@ -159,12 +155,20 @@ elif query_type == "VWAP Buy-Sell Delta":
     if selected_instruments:
         query_params["instruments"] = selected_instruments
 
+elif query_type == "temp1":
+    query = f"""
+    SELECT instrumentname, price, quantity, direction ,local_datetime
+    FROM public.log_big_clips
+    WHERE local_datetime::date BETWEEN :start_date AND :end_date
+    ORDER BY instrumentname, local_datetime;
+    """
+
 # ---- RUN QUERY ----
 try:
     with engine.connect() as conn: ##############
-        df = pd.read_sql(text(query), conn, params=query_params)
+        df = pd.read_sql( text(query), conn, params=query_params )
 
-    st.subheader(f"Results")
+    # st.subheader(f"Results")
     # st.subheader(f"Results for '{query_type}'")
     
     if show_sql:
@@ -172,7 +176,7 @@ try:
 
     st.dataframe(df, use_container_width=True)
 
-    if query_type == "Simple Aggregate":
+    if query_type == "Aggregate Queries":
         if chart_type == "Bar Chart":
             st.bar_chart(df.set_index("group_field"))
         elif chart_type == "Line Chart":
@@ -184,5 +188,6 @@ try:
                     y="count()"
                 ), use_container_width=True
             )
+
 except Exception as e:
     st.error(f"⚠️ Error running query: {e}")
