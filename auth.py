@@ -1,7 +1,7 @@
 import streamlit as st
 import json
 def load_credentials():
-    with open("clip_analyzer/credentials.json", "r") as f:
+    with open("C:/Users/kavish.sethi/Downloads/Testing/clip_analyzer/credentials.json", "r") as f:
         return json.load(f)
 
 USER_CREDENTIALS = load_credentials()
